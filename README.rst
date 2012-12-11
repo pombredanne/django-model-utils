@@ -278,6 +278,11 @@ it's safe to use as your default manager for the model.
     inheritance; it won't work for grandchild models.
 
 .. note::
+    The implementation of ``InheritanceManager`` uses ``select_related``
+    internally.  Due to `Django bug #16855`_, this currently means that it
+    will override any previous ``select_related`` calls on the ``QuerySet``.
+
+.. note::
     ``InheritanceManager`` requires Django 1.2 or later. Previous versions of
     django-model-utils included ``InheritanceCastModel``, an alternative (and
     inferior) approach to this problem that is Django 1.1
@@ -286,6 +291,7 @@ it's safe to use as your default manager for the model.
     its use in new code is discouraged.
 
 .. _contributed by Jeff Elmore: http://jeffelmore.org/2010/11/11/automatic-downcasting-of-inherited-models-in-django/
+.. _Django bug #16855: https://code.djangoproject.com/ticket/16855
 
 
 TimeStampedModel
@@ -337,69 +343,33 @@ but this requires boilerplate code. The ``PassThroughManager`` class
 To use ``PassThroughManager``, rather than defining a custom manager with
 additional methods, define a custom ``QuerySet`` subclass with the additional
 methods you want, and pass that ``QuerySet`` subclass to the
-``PassThroughManager`` constructor. ``PassThroughManager`` will always return
-instances of your custom ``QuerySet``, and you can also call methods of your
-custom ``QuerySet`` directly on the manager::
+``PassThroughManager.for_queryset_class()`` class method. The returned
+``PassThroughManager`` subclass will always return instances of your custom
+``QuerySet``, and you can also call methods of your custom ``QuerySet``
+directly on the manager::
 
     from datetime import datetime
     from django.db import models
     from django.db.models.query import QuerySet
-    
+    from model_utils.managers import PassThroughManager
+
     class PostQuerySet(QuerySet):
         def by_author(self, user):
             return self.filter(user=user)
-            
+
         def published(self):
             return self.filter(published__lte=datetime.now())
-    
+
         def unpublished(self):
             return self.filter(published__gte=datetime.now())
-    
-    
+
+
     class Post(models.Model):
         user = models.ForeignKey(User)
         published = models.DateTimeField()
-    
-        objects = PassThroughManager(PostQuerySet)
-    
-    Post.objects.published()
-    Post.objects.by_author(user=request.user).unpublished()
 
-If you want certain methods available only on the manager, or you need to
-override other manager methods (particularly ``get_query_set``), you can also
-define a custom manager that inherits from ``PassThroughManager``::
+        objects = PassThroughManager.for_queryset_class(PostQuerySet)()
 
-    from datetime import datetime
-    from django.db import models
-    from django.db.models.query import QuerySet
-    
-    class PostQuerySet(QuerySet):
-        def by_author(self, user):
-            return self.filter(user=user)
-    
-        def published(self):
-            return self.filter(published__lte=datetime.now())
-    
-        def unpublished(self):
-            return self.filter(published__gte=datetime.now())
-    
-    class PostManager(PassThroughManager):
-        def get_query_set(self):
-            return PostQuerySet(self.model, using=self._db)
-    
-        def get_stats(self):
-            return {
-                'published_count': self.published().count(),
-                'unpublished_count': self.unpublished().count(),
-            }
-    
-    class Post(models.Model):
-        user = models.ForeignKey(User)
-        published = models.DateTimeField()
-    
-        objects = PostManager()
-    
-    Post.objects.get_stats()
     Post.objects.published()
     Post.objects.by_author(user=request.user).unpublished()
 

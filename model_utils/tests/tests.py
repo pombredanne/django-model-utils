@@ -1,14 +1,13 @@
 from __future__ import with_statement
 
-import pickle, sys, warnings
+import pickle, warnings
 
 from datetime import datetime, timedelta
 
-import django
-from django.test import TestCase
 from django.db import models
 from django.db.models.fields import FieldDoesNotExist
 from django.core.exceptions import ImproperlyConfigured
+from django.test import TestCase
 
 from django.contrib.contenttypes.models import ContentType
 
@@ -21,7 +20,7 @@ from model_utils.tests.models import (
     InheritanceManagerTestParent, InheritanceManagerTestChild1,
     InheritanceManagerTestChild2, TimeStamp, Post, Article, Status,
     StatusPlainTuple, TimeFrame, Monitored, StatusManagerAdded,
-    TimeFrameManagerAdded, Entry, Dude, SplitFieldAbstractParent)
+    TimeFrameManagerAdded, Entry, Dude, SplitFieldAbstractParent, Car, Spot)
 
 
 
@@ -286,15 +285,12 @@ class InheritanceCastModelTests(TestCase):
         self.assertEquals(obj.__class__, InheritChild)
 
 
-    # @@@ Use proper test skipping once Django 1.2 is minimum supported version.
-    if sys.version_info >= (2, 6):
-        # @@@ catch_warnings only available in Python 2.6 and newer
-        def test_pending_deprecation(self):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                InheritParent()
-                self.assertEqual(len(w), 1)
-                assert issubclass(w[-1].category, PendingDeprecationWarning)
+    def test_pending_deprecation(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            InheritParent()
+            self.assertEqual(len(w), 1)
+            assert issubclass(w[-1].category, PendingDeprecationWarning)
 
 
 
@@ -320,63 +316,88 @@ class InheritanceCastQuerysetTests(TestCase):
 
 
 
-# @@@ Use proper test skipping once 1.2 is minimum supported version.
-if django.VERSION >= (1, 2):
-    class InheritanceManagerTests(TestCase):
-        def setUp(self):
-            self.child1 = InheritanceManagerTestChild1.objects.create()
-            self.child2 = InheritanceManagerTestChild2.objects.create()
+class InheritanceManagerTests(TestCase):
+    def setUp(self):
+        self.child1 = InheritanceManagerTestChild1.objects.create()
+        self.child2 = InheritanceManagerTestChild2.objects.create()
 
 
-        def get_manager(self):
-            return InheritanceManagerTestParent.objects
+    def get_manager(self):
+        return InheritanceManagerTestParent.objects
 
 
-        def test_normal(self):
-            self.assertEquals(set(self.get_manager().all()),
-                              set([
-                        InheritanceManagerTestParent(pk=self.child1.pk),
-                        InheritanceManagerTestParent(pk=self.child2.pk),
-                        ]))
+    def test_normal(self):
+        self.assertEquals(set(self.get_manager().all()),
+                          set([
+                    InheritanceManagerTestParent(pk=self.child1.pk),
+                    InheritanceManagerTestParent(pk=self.child2.pk),
+                    ]))
 
 
-        def test_select_all_subclasses(self):
-            self.assertEquals(
-                set(self.get_manager().select_subclasses()),
-                set([self.child1, self.child2]))
+    def test_select_all_subclasses(self):
+        self.assertEquals(
+            set(self.get_manager().select_subclasses()),
+            set([self.child1, self.child2]))
 
 
-        def test_select_specific_subclasses(self):
-            self.assertEquals(
-                set(self.get_manager().select_subclasses(
-                        "inheritancemanagertestchild1")),
-                set([self.child1,
-                     InheritanceManagerTestParent(pk=self.child2.pk)]))
+    def test_select_specific_subclasses(self):
+        self.assertEquals(
+            set(self.get_manager().select_subclasses(
+                    "inheritancemanagertestchild1")),
+            set([self.child1,
+                 InheritanceManagerTestParent(pk=self.child2.pk)]))
 
-        def test_get_subclass(self):
-            self.assertEquals(
-                self.get_manager().get_subclass(pk=self.child1.pk),
-                self.child1)
-
-
-    class InheritanceManagerRelatedTests(InheritanceManagerTests):
-        def setUp(self):
-            self.related = InheritanceManagerTestRelated.objects.create()
-            self.child1 = InheritanceManagerTestChild1.objects.create(
-                related=self.related)
-            self.child2 = InheritanceManagerTestChild2.objects.create(
-                related=self.related)
+    def test_get_subclass(self):
+        self.assertEquals(
+            self.get_manager().get_subclass(pk=self.child1.pk),
+            self.child1)
 
 
-        def get_manager(self):
-            return self.related.imtests
+class InheritanceManagerRelatedTests(InheritanceManagerTests):
+    def setUp(self):
+        self.related = InheritanceManagerTestRelated.objects.create()
+        self.child1 = InheritanceManagerTestChild1.objects.create(
+            related=self.related)
+        self.child2 = InheritanceManagerTestChild2.objects.create(
+            related=self.related)
+
+
+    def get_manager(self):
+        return self.related.imtests
 
 
     def test_get_method_with_select_subclasses(self):
-        self.assertEqual(InheritanceManagerTestParent.objects.select_subclasses().get(id=self.child1.id),
-                         self.child1)
-        
-        
+        self.assertEqual(
+            InheritanceManagerTestParent.objects.select_subclasses().get(
+                id=self.child1.id),
+            self.child1)
+
+
+    def test_annotate_with_select_subclasses(self):
+        qs = InheritanceManagerTestParent.objects.select_subclasses().annotate(
+            models.Count('id'))
+        self.assertEqual(qs.get(id=self.child1.id).id__count, 1)
+
+
+    def test_annotate_with_named_arguments_with_select_subclasses(self):
+        qs = InheritanceManagerTestParent.objects.select_subclasses().annotate(
+            test_count=models.Count('id'))
+        self.assertEqual(qs.get(id=self.child1.id).test_count, 1)
+
+
+    def test_annotate_before_select_subclasses(self):
+        qs = InheritanceManagerTestParent.objects.annotate(
+            models.Count('id')).select_subclasses()
+        self.assertEqual(qs.get(id=self.child1.id).id__count, 1)
+
+
+    def test_annotate_with_named_arguments_before_select_subclasses(self):
+        qs = InheritanceManagerTestParent.objects.annotate(
+            test_count=models.Count('id')).select_subclasses()
+        self.assertEqual(qs.get(id=self.child1.id).test_count, 1)
+
+
+
 class TimeStampedModelTests(TestCase):
     def test_created(self):
         t1 = TimeStamp.objects.create()
@@ -523,13 +544,13 @@ class QueryManagerTests(TestCase):
 
 
 
-# @@@ Use proper test skipping once Django 1.2 is minimum supported version.
 try:
     from south.modelsinspector import introspector
 except ImportError:
     introspector = None
 
-if introspector is not None:
+# @@@ use skipUnless once Django 1.3 is minimum supported version
+if introspector:
     class SouthFreezingTests(TestCase):
         def test_introspector_adds_no_excerpt_field(self):
             mf = Article._meta.get_field('body')
@@ -581,15 +602,12 @@ class ManagerFromTests(TestCase):
         self.assertRaises(pickle.PicklingError, dump_load)
 
 
-    # @@@ Use proper test skipping once Django 1.2 is minimum supported version.
-    if sys.version_info >= (2, 6):
-        # @@@ catch_warnings only available in Python 2.6 and newer
-        def test_pending_deprecation(self):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                manager_from()
-                self.assertEqual(len(w), 1)
-                assert issubclass(w[-1].category, PendingDeprecationWarning)
+    def test_pending_deprecation(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            manager_from()
+            self.assertEqual(len(w), 1)
+            assert issubclass(w[-1].category, PendingDeprecationWarning)
 
 
 
@@ -621,3 +639,24 @@ class PassThroughManagerTests(TestCase):
         saltyqs = pickle.dumps(qs)
         unqs = pickle.loads(saltyqs)
         self.assertEqual(unqs.by_name('The Dude').count(), 1)
+
+    def test_queryset_not_available_on_related_manager(self):
+        dude = Dude.objects.by_name('Duder').get()
+        Car.objects.create(name='Ford', owner=dude)
+        self.assertFalse(hasattr(dude.cars_owned, 'by_name'))
+
+
+class CreatePassThroughManagerTests(TestCase):
+    def setUp(self):
+        self.dude = Dude.objects.create(name='El Duderino')
+        Spot.objects.create(name='The Crib', owner=self.dude, closed=True,
+                            secure=True)
+
+    def test_reverse_manager(self):
+        self.assertEqual(self.dude.spots_owned.closed().count(), 1)
+
+    def test_related_queryset_pickling(self):
+        qs = self.dude.spots_owned.closed()
+        pickled_qs = pickle.dumps(qs)
+        unpickled_qs = pickle.loads(pickled_qs)
+        self.assertEqual(unpickled_qs.secured().count(), 1)

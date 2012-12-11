@@ -7,6 +7,7 @@ from django.db.models.fields.related import OneToOneField
 from django.db.models.manager import Manager
 from django.db.models.query import QuerySet
 
+
 class InheritanceQuerySet(QuerySet):
     def select_subclasses(self, *subclasses):
         if not subclasses:
@@ -18,21 +19,31 @@ class InheritanceQuerySet(QuerySet):
         return new_qs
 
     def _clone(self, klass=None, setup=False, **kwargs):
-        try:
-            kwargs.update({'subclasses': self.subclasses})
-        except AttributeError:
-            pass
+        for name in ['subclasses', '_annotated']:
+            if hasattr(self, name):
+                kwargs[name] = getattr(self, name)
         return super(InheritanceQuerySet, self)._clone(klass, setup, **kwargs)
+
+    def annotate(self, *args, **kwargs):
+        qset = super(InheritanceQuerySet, self).annotate(*args, **kwargs)
+        qset._annotated = [a.default_alias for a in args] + kwargs.keys()
+        return qset
 
     def iterator(self):
         iter = super(InheritanceQuerySet, self).iterator()
         if getattr(self, 'subclasses', False):
             for obj in iter:
-                obj = [getattr(obj, s) for s in self.subclasses if getattr(obj, s)] or [obj]
-                yield obj[0]
+                sub_obj = [getattr(obj, s) for s in self.subclasses if getattr(obj, s)] or [obj]
+                sub_obj = sub_obj[0]
+                if getattr(self, '_annotated', False):
+                    for k in self._annotated:
+                        setattr(sub_obj, k, getattr(obj, k))
+
+                yield sub_obj
         else:
             for obj in iter:
                 yield obj
+
 
 class InheritanceManager(models.Manager):
     use_for_related_fields = True
@@ -95,15 +106,15 @@ class PassThroughManager(models.Manager):
     method.
 
     Alternately, if you don't need any extra methods on your manager that
-    aren't on your QuerySet, then just pass your QuerySet class to this
-    class' constructer.
+    aren't on your QuerySet, then just pass your QuerySet class to the
+    ``for_queryset_class`` class method.
 
     class PostQuerySet(QuerySet):
         def enabled(self):
             return self.filter(disabled=False)
 
     class Post(models.Model):
-        objects = PassThroughManager(PostQuerySet)
+        objects = PassThroughManager.for_queryset_class(PostQuerySet)()
 
     """
     # pickling causes recursion errors
@@ -125,6 +136,20 @@ class PassThroughManager(models.Manager):
                 kargs['using'] = self._db
             return self._queryset_cls(**kargs)
         return super(PassThroughManager, self).get_query_set()
+
+    @classmethod
+    def for_queryset_class(cls, queryset_cls):
+        class _PassThroughManager(cls):
+            def __init__(self):
+                return super(_PassThroughManager, self).__init__()
+
+            def get_query_set(self):
+                kwargs = {}
+                if hasattr(self, "_db"):
+                    kwargs["using"] = self._db
+                return queryset_cls(self.model, **kwargs)
+
+        return _PassThroughManager
 
 
 def manager_from(*mixins, **kwds):

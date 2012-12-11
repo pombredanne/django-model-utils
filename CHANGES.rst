@@ -4,6 +4,23 @@ CHANGES
 tip (unreleased)
 ----------------
 
+1.1.0 (2012.04.13)
+------------------
+
+- Updated AutoCreatedField, AutoLastModifiedField, MonitorField, and
+  TimeFramedModel to use ``django.utils.timezone.now`` on Django 1.4.
+  Thanks Donald Stufft.
+
+- Fixed annotation of InheritanceQuerysets. Thanks Jeff Elmore and Facundo
+  Gaich.
+
+- Dropped support for Python 2.5 and Django 1.1. Both are no longer supported
+  even for security fixes, and should not be used.
+
+- Added ``PassThroughManager.for_queryset_class()``, which fixes use of
+  ``PassThroughManager`` with related fields. Thanks Ryan Kaskel for report and
+  fix.
+
 - Added ``InheritanceManager.get_subclass()``. Thanks smacker.
 
 1.0.0 (2011.06.16)
