@@ -5,3 +5,6 @@ HGREV
 .tox/
 Django-*.egg
 *.pyc
+htmlcov/
+docs/_build/
+.idea/
