@@ -1,10 +1,14 @@
 from __future__ import unicode_literals
 
+import django
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
-from django.db.models.fields import FieldDoesNotExist
 from django.core.exceptions import ImproperlyConfigured
-from django.utils.timezone import now
+if django.VERSION >= (1, 9, 0):
+    from django.db.models.functions import Now
+    now = Now()
+else:
+    from django.utils.timezone import now
 
 from model_utils.managers import QueryManager
 from model_utils.fields import AutoCreatedField, AutoLastModifiedField, \
@@ -36,6 +40,7 @@ class TimeFramedModel(models.Model):
     class Meta:
         abstract = True
 
+
 class StatusModel(models.Model):
     """
     An abstract base class model with a ``status`` field that
@@ -51,6 +56,7 @@ class StatusModel(models.Model):
     class Meta:
         abstract = True
 
+
 def add_status_query_managers(sender, **kwargs):
     """
     Add a Querymanager for each status item dynamically.
@@ -59,15 +65,14 @@ def add_status_query_managers(sender, **kwargs):
     if not issubclass(sender, StatusModel):
         return
     for value, display in getattr(sender, 'STATUS', ()):
-        try:
-            sender._meta.get_field(value)
-            raise ImproperlyConfigured("StatusModel: Model '%s' has a field "
-                                       "named '%s' which conflicts with a "
-                                       "status of the same name."
-                                       % (sender.__name__, value))
-        except FieldDoesNotExist:
-            pass
+        if _field_exists(sender, value):
+            raise ImproperlyConfigured(
+                "StatusModel: Model '%s' has a field named '%s' which "
+                "conflicts with a status of the same name."
+                % (sender.__name__, value)
+            )
         sender.add_to_class(value, QueryManager(status=value))
+
 
 def add_timeframed_query_manager(sender, **kwargs):
     """
@@ -76,14 +81,12 @@ def add_timeframed_query_manager(sender, **kwargs):
     """
     if not issubclass(sender, TimeFramedModel):
         return
-    try:
-        sender._meta.get_field('timeframed')
-        raise ImproperlyConfigured("Model '%s' has a field named "
-                                   "'timeframed' which conflicts with "
-                                   "the TimeFramedModel manager."
-                                   % sender.__name__)
-    except FieldDoesNotExist:
-        pass
+    if _field_exists(sender, 'timeframed'):
+        raise ImproperlyConfigured(
+            "Model '%s' has a field named 'timeframed' "
+            "which conflicts with the TimeFramedModel manager."
+            % sender.__name__
+        )
     sender.add_to_class('timeframed', QueryManager(
         (models.Q(start__lte=now) | models.Q(start__isnull=True)) &
         (models.Q(end__gte=now) | models.Q(end__isnull=True))
@@ -92,3 +95,7 @@ def add_timeframed_query_manager(sender, **kwargs):
 
 models.signals.class_prepared.connect(add_status_query_managers)
 models.signals.class_prepared.connect(add_timeframed_query_manager)
+
+
+def _field_exists(model_class, field_name):
+    return field_name in [f.attname for f in model_class._meta.local_fields]

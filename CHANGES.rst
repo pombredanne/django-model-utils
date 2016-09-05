@@ -4,6 +4,66 @@ CHANGES
 master (unreleased)
 -------------------
 
+
+2.5.2 (2016.08.09)
+------------------
+
+* Include `runtests.py` in sdist.
+
+
+2.5.1 (2016.08.03)
+------------------
+
+* Fix `InheritanceQuerySet` raising an `AttributeError` exception
+  under Django 1.9.
+
+* Django 1.10 support regressed with changes between pre-alpha and final
+  release; 1.10 currently not supported.
+
+
+2.5 (2016.04.18)
+----------------
+
+* Drop support for Python 3.2.
+
+* Add support for Django 1.10 pre-alpha.
+
+* Track foreign keys on parent models properly when a tracker
+  is defined on a child model. Fixes GH-214.
+
+
+2.4 (2015.12.03)
+----------------
+
+* Remove `PassThroughManager`. Use Django's built-in `QuerySet.as_manager()`
+  and/or `Manager.from_queryset()` utilities instead.
+
+* Add support for Django 1.9.
+
+
+2.3.1 (2015-07-20)
+------------------
+
+* Remove all translation-related automation in `setup.py`. Fixes GH-178 and
+  GH-179. Thanks Joe Weiss, Matt Molyneaux, and others for the reports.
+
+
+2.3 (2015.07.17)
+----------------
+
+* Keep track of deferred fields on model instance instead of on
+  FieldInstanceTracker instance. Fixes accessing deferred fields for multiple
+  instances of a model from the same queryset. Thanks Bram Boogaard. Merge of
+  GH-151.
+
+* Fix Django 1.7 migrations compatibility for SplitField. Thanks ad-m. Merge of
+  GH-157; fixes GH-156.
+
+* Add German translations.
+
+* Django 1.8 compatibility.
+
+
 2.2 (2014.07.31)
 ----------------
 

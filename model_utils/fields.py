@@ -1,5 +1,6 @@
 from __future__ import unicode_literals
 
+import django
 from django.db import models
 from django.conf import settings
 from django.utils.encoding import python_2_unicode_compatible
@@ -59,6 +60,8 @@ class StatusField(models.CharField):
                 "To use StatusField, the model '%s' must have a %s choices class attribute." \
                 % (sender.__name__, self.choices_name)
             self._choices = getattr(sender, self.choices_name)
+            if django.VERSION >= (1, 9, 0):
+                self.choices = self._choices
             if not self.has_default():
                 self.default = tuple(getattr(sender, self.choices_name))[0][0]  # set first as default
 
@@ -68,6 +71,8 @@ class StatusField(models.CharField):
         # the STATUS class attr being available), but we need to set some dummy
         # choices now so the super method will add the get_FOO_display method
         self._choices = [(0, 'dummy')]
+        if django.VERSION >= (1, 9, 0):
+            self.choices = self._choices
         super(StatusField, self).contribute_to_class(cls, name)
 
     def deconstruct(self):
@@ -120,8 +125,7 @@ class MonitorField(models.DateTimeField):
 
     def deconstruct(self):
         name, path, args, kwargs = super(MonitorField, self).deconstruct()
-        if self.monitor is not None:
-            kwargs['monitor'] = self.monitor
+        kwargs['monitor'] = self.monitor
         if self.when is not None:
             kwargs['when'] = self.when
         return name, path, args, kwargs
@@ -230,6 +234,10 @@ class SplitField(models.TextField):
         except AttributeError:
             return value
 
+    def deconstruct(self):
+        name, path, args, kwargs = super(SplitField, self).deconstruct()
+        kwargs['no_excerpt_field'] = True
+        return name, path, args, kwargs
 
 # allow South to handle these fields smoothly
 try:

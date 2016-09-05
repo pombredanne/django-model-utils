@@ -2,8 +2,9 @@ from __future__ import unicode_literals
 
 from copy import deepcopy
 
-from django.db import models
+import django
 from django.core.exceptions import FieldError
+from django.db import models
 from django.db.models.query_utils import DeferredAttribute
 
 
@@ -32,10 +33,10 @@ class FieldInstanceTracker(object):
     def current(self, fields=None):
         """Returns dict of current values for all tracked fields"""
         if fields is None:
-            if self.deferred_fields:
+            if self.instance._deferred_fields:
                 fields = [
                     field for field in self.fields
-                    if field not in self.deferred_fields
+                    if field not in self.instance._deferred_fields
                 ]
             else:
                 fields = self.fields
@@ -62,33 +63,47 @@ class FieldInstanceTracker(object):
         )
 
     def init_deferred_fields(self):
-        self.deferred_fields = []
-        if not self.instance._deferred:
+        self.instance._deferred_fields = set()
+        if hasattr(self.instance, '_deferred') and not self.instance._deferred:
             return
 
         class DeferredAttributeTracker(DeferredAttribute):
             def __get__(field, instance, owner):
+                if instance is None:
+                    return field
                 data = instance.__dict__
                 if data.get(field.field_name, field) is field:
-                    self.deferred_fields.remove(field.field_name)
+                    instance._deferred_fields.remove(field.field_name)
                     value = super(DeferredAttributeTracker, field).__get__(
                         instance, owner)
                     self.saved_data[field.field_name] = deepcopy(value)
                 return data[field.field_name]
 
-        for field in self.fields:
-            field_obj = self.instance.__class__.__dict__.get(field)
-            if isinstance(field_obj, DeferredAttribute):
-                self.deferred_fields.append(field)
-
-                # Django 1.4
-                model = None
-                if hasattr(field_obj, 'model_ref'):
-                    model = field_obj.model_ref()
-
+        if django.VERSION >= (1, 8):
+            self.instance._deferred_fields = self.instance.get_deferred_fields()
+            for field in self.instance._deferred_fields:
+                if django.VERSION >= (1, 10):
+                    field_obj = getattr(self.instance.__class__, field)
+                else:
+                    field_obj = self.instance.__class__.__dict__.get(field)
                 field_tracker = DeferredAttributeTracker(
-                    field_obj.field_name, model)
+                    field_obj.field_name, None)
                 setattr(self.instance.__class__, field, field_tracker)
+        else:
+            for field in self.fields:
+                field_obj = self.instance.__class__.__dict__.get(field)
+                if isinstance(field_obj, DeferredAttribute):
+                    self.instance._deferred_fields.add(field)
+
+                    # Django 1.4
+                    if django.VERSION >= (1, 5):
+                        model = None
+                    else:
+                        model = field_obj.model_ref()
+
+                    field_tracker = DeferredAttributeTracker(
+                        field_obj.field_name, model)
+                    setattr(self.instance.__class__, field, field_tracker)
 
 
 class FieldTracker(object):
@@ -101,7 +116,7 @@ class FieldTracker(object):
     def get_field_map(self, cls):
         """Returns dict mapping fields names to model attribute names"""
         field_map = dict((field, field) for field in self.fields)
-        all_fields = dict((f.name, f.attname) for f in cls._meta.local_fields)
+        all_fields = dict((f.name, f.attname) for f in cls._meta.fields)
         field_map.update(**dict((k, v) for (k, v) in all_fields.items()
                                 if k in field_map))
         return field_map
@@ -113,7 +128,7 @@ class FieldTracker(object):
 
     def finalize_class(self, sender, **kwargs):
         if self.fields is None:
-            self.fields = (field.attname for field in sender._meta.local_fields)
+            self.fields = (field.attname for field in sender._meta.fields)
         self.fields = set(self.fields)
         self.field_map = self.get_field_map(sender)
         models.signals.post_init.connect(self.initialize_tracker)
